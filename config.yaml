@@ -1,0 +1,55 @@
+mt5:
+  gold_symbols:
+    - XAUUSD
+    - XAUUSDm
+    - XAUUSDc
+    - XAUUSD.
+    - GOLD
+    - GOLDm
+
+  silver_symbols:
+    - XAGUSD
+    - XAGUSDm
+    - XAGUSDc
+    - XAGUSD.
+    - SILVER
+    - SILVERm
+
+  timeframe: M10
+
+data:
+  bars: 50000
+
+  include_ticks: false
+
+  save_csv: true
+  save_parquet: true
+
+analysis:
+  correlation_windows:
+    - 20
+    - 50
+    - 100
+    - 200
+
+  beta_window: 100
+
+  zscore_window: 100
+
+  max_lead_lag_bars: 12
+
+  divergence_zscore:
+    - 1.5
+    - 2.0
+    - 2.5
+    - 3.0
+
+backtest:
+  enabled: true
+
+  transaction_cost_model: true
+
+  slippage_model: true
+
+output:
+  directory: output
