@@ -333,7 +333,7 @@ Every run saves `output/reports/run_metadata.json` with:
 If you use this research system in academic or professional work, please acknowledge:
 
 > Gold-Silver Quantitative Research System, v1.0.0
-> https://github.com/your-repo/gold-silver_research
+> https://github.com/TAMIRAT-FEREJA-T/Gold-Silver-Quantitative-Research-System.git
 
 ## License
 
