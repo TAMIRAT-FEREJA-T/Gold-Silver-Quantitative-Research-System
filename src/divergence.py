@@ -60,12 +60,12 @@ def analyze_divergence_forward_returns(
     events: List[DivergenceEvent],
     forward_periods: List[int]
 ) -> Dict:
+    """Analyze forward returns for all events (combined thresholds)."""
     results = {}
 
     for period in forward_periods:
         gold_returns = []
         silver_returns = []
-        ratio_returns = []
 
         for event in events:
             if event.timestamp in df.index:
@@ -97,6 +97,23 @@ def analyze_divergence_forward_returns(
                     'count': len(silver_returns)
                 }
             }
+
+    return results
+
+
+def analyze_divergence_by_threshold(
+    df: pd.DataFrame,
+    zscore_col: str,
+    thresholds: List[float],
+    forward_periods: List[int],
+    cooldown_bars: int = 0
+) -> Dict:
+    """Analyze forward returns for each threshold separately."""
+    results = {}
+
+    for threshold in thresholds:
+        events = detect_divergences(df, zscore_col, [threshold], cooldown_bars)
+        results[threshold] = analyze_divergence_forward_returns(df, events, forward_periods)
 
     return results
 

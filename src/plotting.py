@@ -154,25 +154,33 @@ def plot_lead_lag(lead_lag_results: Dict, output_dir: Path):
 def plot_returns_distribution(df: pd.DataFrame, output_dir: Path):
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
-    axes[0, 0].hist(df['gold_log_return'].dropna(), bins=100, alpha=0.7, color='gold', edgecolor='black')
+    gold_ret = df['gold_log_return'].replace([np.inf, -np.inf], np.nan).dropna()
+    silver_ret = df['silver_log_return'].replace([np.inf, -np.inf], np.nan).dropna()
+
+    axes[0, 0].hist(gold_ret, bins=100, alpha=0.7, color='gold', edgecolor='black')
     axes[0, 0].set_title('Gold Log Returns Distribution')
     axes[0, 0].grid(True, alpha=0.3)
 
-    axes[0, 1].hist(df['silver_log_return'].dropna(), bins=100, alpha=0.7, color='silver', edgecolor='black')
+    axes[0, 1].hist(silver_ret, bins=100, alpha=0.7, color='silver', edgecolor='black')
     axes[0, 1].set_title('Silver Log Returns Distribution')
     axes[0, 1].grid(True, alpha=0.3)
 
-    axes[1, 0].scatter(df['gold_log_return'], df['silver_log_return'], alpha=0.3, s=1)
-    axes[1, 0].set_title('Gold vs Silver Returns Scatter')
-    axes[1, 0].set_xlabel('Gold Return')
-    axes[1, 0].set_ylabel('Silver Return')
-    axes[1, 0].grid(True, alpha=0.3)
+    # Scatter plots with finite values only
+    valid_mask = np.isfinite(df['gold_log_return']) & np.isfinite(df['silver_log_return'])
+    valid_df = df[valid_mask]
 
-    axes[1, 1].scatter(df['gold_log_return'], df['silver_log_return'] - df['gold_log_return'], alpha=0.3, s=1)
-    axes[1, 1].set_title('Gold Return vs Residual (Silver - Gold)')
-    axes[1, 1].set_xlabel('Gold Return')
-    axes[1, 1].set_ylabel('Residual')
-    axes[1, 1].grid(True, alpha=0.3)
+    if len(valid_df) > 0:
+        axes[1, 0].scatter(valid_df['gold_log_return'], valid_df['silver_log_return'], alpha=0.3, s=1)
+        axes[1, 0].set_title('Gold vs Silver Returns Scatter')
+        axes[1, 0].set_xlabel('Gold Return')
+        axes[1, 0].set_ylabel('Silver Return')
+        axes[1, 0].grid(True, alpha=0.3)
+
+        axes[1, 1].scatter(valid_df['gold_log_return'], valid_df['silver_log_return'] - valid_df['gold_log_return'], alpha=0.3, s=1)
+        axes[1, 1].set_title('Gold Return vs Residual (Silver - Gold)')
+        axes[1, 1].set_xlabel('Gold Return')
+        axes[1, 1].set_ylabel('Residual')
+        axes[1, 1].grid(True, alpha=0.3)
 
     fig.tight_layout()
     save_chart(fig, output_dir / "07_returns_distribution.png")

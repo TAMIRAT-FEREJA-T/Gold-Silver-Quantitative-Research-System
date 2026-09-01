@@ -35,9 +35,10 @@ from src.spread_analysis import (
 from src.regime_analysis import add_session_features, regime_analysis
 from src.divergence import (
     detect_divergences, analyze_divergence_forward_returns,
+    analyze_divergence_by_direction, analyze_divergence_by_threshold,
     conditional_divergence_analysis
 )
-from src.statistics import correlation_stability
+from src.statistics import adf_test, engle_granger_test, calculate_half_life, correlation_stability
 from src.walkforward import create_walkforward_windows, run_walkforward_analysis, summarize_walkforward
 from src.backtest import (
     simulate_lead_lag_strategy, simulate_mean_reversion_strategy
@@ -138,7 +139,7 @@ def main():
         sync_df = add_features(sync_df, 'silver_')
 
         sync_df['gold_log_return'] = calculate_log_returns(sync_df['gold_close'])
-        sync_df['silver_log_return'] = calculate_log_returns(sync_df['silver_log_return'])
+        sync_df['silver_log_return'] = calculate_log_returns(sync_df['silver_close'])
         sync_df['gold_pct_return'] = sync_df['gold_close'].pct_change()
         sync_df['silver_pct_return'] = sync_df['silver_close'].pct_change()
 
@@ -184,7 +185,7 @@ def main():
         thresholds = config.analysis.divergence_zscore
 
         events = detect_divergences(sync_df, zscore_col, thresholds, cooldown_bars=12)
-        divergence_results = analyze_divergence_forward_returns(sync_df, events, forward_periods)
+        divergence_results = analyze_divergence_by_threshold(sync_df, zscore_col, thresholds, forward_periods, cooldown_bars=12)
         divergence_by_direction = analyze_divergence_by_direction(sync_df, events, forward_periods)
 
         conditional_div = conditional_divergence_analysis(
@@ -268,18 +269,41 @@ def main():
         if backtest_results:
             for name, result in backtest_results.items():
                 if hasattr(result, 'trades') and result.trades:
+                    windows = create_walkforward_windows(sync_df)
+                    if not windows:
+                        continue
+                    
                     if 'Lead_Lag' in name:
-                        strategy_fn = simulate_lead_lag_strategy
+                        # Extract params from the original backtest
+                        if 'Gold_Silver' in name:
+                            leader, follower = 'gold', 'silver'
+                        else:
+                            leader, follower = 'silver', 'gold'
+                        # Use the best lag from lead_lag_results
+                        if 'Gold_Silver' in name and 'best_gold_silver' in lead_lag_results:
+                            lag_bars = lead_lag_results['best_gold_silver'].lag_bars
+                        elif 'Silver_Gold' in name and 'best_silver_gold' in lead_lag_results:
+                            lag_bars = lead_lag_results['best_silver_gold'].lag_bars
+                        else:
+                            lag_bars = 1
+                        
+                        def strategy_wrapper(df, **params):
+                            return simulate_lead_lag_strategy(
+                                df, leader, follower, lag_bars, 0.0005, 6, **params
+                            )
                         strat_params = {'commission': 0.5, 'slippage': 0.2}
-                    else:
-                        strategy_fn = simulate_mean_reversion_strategy
+                        
+                    else:  # Mean_Reversion
+                        threshold = float(name.split('Z')[-1])
+                        def strategy_wrapper(df, **params):
+                            return simulate_mean_reversion_strategy(
+                                df, 'residual_zscore', threshold, 0.5, 24, **params
+                            )
                         strat_params = {'commission': 0.5, 'slippage': 0.2}
                     
-                    windows = create_walkforward_windows(sync_df)
-                    if windows:
-                        wf_results = run_walkforward_analysis(sync_df, strategy_fn, strat_params, windows)
-                        wf_summary = summarize_walkforward(wf_results)
-                        walkforward_results[name] = wf_summary
+                    wf_results = run_walkforward_analysis(sync_df, strategy_wrapper, strat_params, windows)
+                    wf_summary = summarize_walkforward(wf_results)
+                    walkforward_results[name] = wf_summary
 
         logger.info("Generating charts")
         generate_all_charts(

@@ -5,7 +5,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
 from src.config import Config
-from src.walkforward import create_walkforward_windows, run_walkforward_analysis, summarize_walkforward
 
 
 def generate_research_report(
@@ -129,14 +128,14 @@ def generate_research_report(
     report_lines.append("## DIVERGENCE ANALYSIS")
     for threshold, data in divergence_results.items():
         report_lines.append(f"### Z-Score Threshold: {threshold}")
-        for direction in ['upper', 'lower']:
-            if direction in data:
-                for period, stats in data[direction].items():
-                    report_lines.append(f"  {direction.capitalize()} {period}: "
-                                       f"mean={stats.get('mean', 0):.6f}, "
-                                       f"median={stats.get('median', 0):.6f}, "
-                                       f"pct_pos={stats.get('pct_positive', 0):.1f}%, "
-                                       f"count={stats.get('count', 0)}")
+        for period, stats in data.items():
+            if 'gold' in stats and 'silver' in stats:
+                report_lines.append(f"  {period}: Gold mean={stats['gold'].get('mean', 0):.6f}, "
+                                   f"pct_pos={stats['gold'].get('pct_positive', 0):.1f}%, "
+                                   f"count={stats['gold'].get('count', 0)}; "
+                                   f"Silver mean={stats['silver'].get('mean', 0):.6f}, "
+                                   f"pct_pos={stats['silver'].get('pct_positive', 0):.1f}%, "
+                                   f"count={stats['silver'].get('count', 0)}")
     report_lines.append("")
 
     report_lines.append("## STRATEGY CANDIDATES")
@@ -162,27 +161,14 @@ def generate_research_report(
     report_lines.append("")
 
     report_lines.append("## WALK-FORWARD ANALYSIS")
-    if backtest_results:
-        for name, result in backtest_results.items():
-            if hasattr(result, 'trades') and result.trades:
-                from src.walkforward import create_walkforward_windows, run_walkforward_analysis, summarize_walkforward
-                from src.backtest import simulate_lead_lag_strategy, simulate_mean_reversion_strategy
-                
-                if 'Lead_Lag' in name:
-                    strategy_fn = simulate_lead_lag_strategy
-                else:
-                    strategy_fn = simulate_mean_reversion_strategy
-                
-                windows = create_walkforward_windows(df)
-                if windows:
-                    wf_results = run_walkforward_analysis(df, strategy_fn, {}, windows)
-                    wf_summary = summarize_walkforward(wf_results)
-                    report_lines.append(f"### {name} Walk-Forward")
-                    report_lines.append(f"  Windows: {wf_summary.get('num_windows', 0)}")
-                    report_lines.append(f"  Consistency: {wf_summary.get('consistency', 0):.1f}%")
-                    report_lines.append(f"  Avg Net Return: {wf_summary.get('avg_net_return', 0):.6f}")
-                    report_lines.append(f"  Avg Sharpe: {wf_summary.get('avg_sharpe', 0):.2f}")
-                    report_lines.append(f"  Positive Windows: {wf_summary.get('positive_windows', 0)}")
+    if walkforward_results:
+        for name, wf_summary in walkforward_results.items():
+            report_lines.append(f"### {name} Walk-Forward")
+            report_lines.append(f"  Windows: {wf_summary.get('num_windows', 0)}")
+            report_lines.append(f"  Consistency: {wf_summary.get('consistency', 0):.1f}%")
+            report_lines.append(f"  Avg Net Return: {wf_summary.get('avg_net_return', 0):.6f}")
+            report_lines.append(f"  Avg Sharpe: {wf_summary.get('avg_sharpe', 0):.2f}")
+            report_lines.append(f"  Positive Windows: {wf_summary.get('positive_windows', 0)}")
     report_lines.append("")
 
     report_lines.append("## STATISTICAL TESTS")
@@ -207,14 +193,42 @@ def generate_research_report(
 
     report_lines.append("## SPREAD ANALYSIS")
     for name, stats in spread_results.items():
-        if isinstance(stats, dict):
+        if hasattr(stats, 'mean'):  # SpreadStats dataclass
             report_lines.append(f"### {name}")
-            report_lines.append(f"  Mean: {stats.get('mean', 0):.2f}")
-            report_lines.append(f"  Median: {stats.get('median', 0):.2f}")
-            report_lines.append(f"  Min: {stats.get('min', 0):.2f}")
-            report_lines.append(f"  Max: {stats.get('max', 0):.2f}")
-            report_lines.append(f"  95th Pct: {stats.get('pct_95', 0):.2f}")
-            report_lines.append(f"  99th Pct: {stats.get('pct_99', 0):.2f}")
+            report_lines.append(f"  Mean: {stats.mean:.2f}")
+            report_lines.append(f"  Median: {stats.median:.2f}")
+            report_lines.append(f"  Min: {stats.min:.2f}")
+            report_lines.append(f"  Max: {stats.max:.2f}")
+            report_lines.append(f"  95th Pct: {stats.pct_95:.2f}")
+            report_lines.append(f"  99th Pct: {stats.pct_99:.2f}")
+        elif isinstance(stats, dict):
+            # Check if it's a nested dict of SpreadStats (e.g., by_session, by_regime)
+            if stats and hasattr(next(iter(stats.values())), 'mean'):
+                report_lines.append(f"### {name}")
+                for sub_name, sub_stats in stats.items():
+                    report_lines.append(f"  {sub_name}:")
+                    report_lines.append(f"    Mean: {sub_stats.mean:.2f}")
+                    report_lines.append(f"    Median: {sub_stats.median:.2f}")
+                    report_lines.append(f"    Min: {sub_stats.min:.2f}")
+                    report_lines.append(f"    Max: {sub_stats.max:.2f}")
+                    report_lines.append(f"    95th Pct: {sub_stats.pct_95:.2f}")
+                    report_lines.append(f"    99th Pct: {sub_stats.pct_99:.2f}")
+            elif isinstance(stats, dict) and 'gold' in stats and 'silver' in stats:
+                # cost_analysis format
+                report_lines.append(f"### {name}")
+                for metal in ['gold', 'silver']:
+                    m = stats[metal]
+                    report_lines.append(f"  {metal}: avg_spread={m.get('avg_spread', 0):.2f}, "
+                                       f"median_spread={m.get('median_spread', 0):.2f}, "
+                                       f"spread_pct_of_price={m.get('spread_pct_of_price', 0):.4f}%")
+            else:
+                report_lines.append(f"### {name}")
+                report_lines.append(f"  Mean: {stats.get('mean', 0):.2f}")
+                report_lines.append(f"  Median: {stats.get('median', 0):.2f}")
+                report_lines.append(f"  Min: {stats.get('min', 0):.2f}")
+                report_lines.append(f"  Max: {stats.get('max', 0):.2f}")
+                report_lines.append(f"  95th Pct: {stats.get('pct_95', 0):.2f}")
+                report_lines.append(f"  99th Pct: {stats.get('pct_99', 0):.2f}")
     report_lines.append("")
 
     report_lines.append("=" * 80)
@@ -305,14 +319,14 @@ def generate_conclusions(
 
     if 'residual_zscore' in ratio_results:
         rz = ratio_results['residual_zscore']
-        if rz.get('std', 0) > 1.5:
+        if rz.get('std', 0) > 0.5:
             conclusions.append("Residual Z-score shows sufficient variation for mean-reversion analysis")
         else:
             conclusions.append("Residual Z-score shows limited variation")
 
     if divergence_results:
         total_events = sum(
-            data.get('upper', {}).get('count', 0) + data.get('lower', {}).get('count', 0)
+            sum(stats.get('gold', {}).get('count', 0) for stats in data.values() if isinstance(stats, dict))
             for data in divergence_results.values()
         )
         if total_events > 20:
@@ -320,7 +334,8 @@ def generate_conclusions(
         else:
             conclusions.append(f"Divergence events are rare ({total_events} events)")
 
-    if stats_results.get('cointegration', {}).get('is_cointegrated'):
+    coint_result = stats_results.get('cointegration')
+    if coint_result and coint_result.is_cointegrated:
         conclusions.append("Gold and Silver prices are cointegrated (supports mean-reversion)")
     else:
         conclusions.append("Gold and Silver prices are NOT cointegrated (mean-reversion not statistically supported)")
